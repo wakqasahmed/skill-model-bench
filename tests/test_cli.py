@@ -91,6 +91,36 @@ def test_happy_path_writes_json_report_when_output_given(tmp_path):
     assert "openrouter:openai/gpt-4o-mini" in report["models"]
 
 
+def test_nonzero_exit_with_valid_results_still_produces_report(tmp_path, capsys):
+    """promptfoo exits non-zero (e.g. code 100) whenever a test case fails --
+    that's normal signal, not a crash. As long as results.json was written
+    and parses correctly, the CLI must proceed to report generation instead
+    of raising/exiting with an error."""
+    skill_dir = _make_skill_dir(tmp_path)
+
+    def fake_run(command, check=False):
+        output_path = command[command.index("--output") + 1]
+        with open(output_path, "w") as f:
+            json.dump(_fake_promptfoo_results(), f)
+
+        class _CompletedProcess:
+            returncode = 100
+
+        return _CompletedProcess()
+
+    with patch("skill_model_bench.cli.shutil.which", side_effect=lambda name: "/usr/bin/promptfoo" if name == "promptfoo" else None), \
+         patch("skill_model_bench.cli.subprocess.run", side_effect=fake_run) as mock_run:
+        with pytest.raises(SystemExit) as exc_info:
+            main([str(skill_dir), "--model", "openai/gpt-4o-mini"])
+
+    assert exc_info.value.code == 0
+    mock_run.assert_called_once()
+
+    captured = capsys.readouterr()
+    assert "Model benchmark report" in captured.out
+    assert "openrouter:openai/gpt-4o-mini" in captured.out
+
+
 def test_falls_back_to_npx_when_promptfoo_binary_missing(tmp_path):
     skill_dir = _make_skill_dir(tmp_path)
 
