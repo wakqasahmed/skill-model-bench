@@ -135,6 +135,17 @@ def test_generate_config_empty_fixtures_file_falls_back_to_judge(tmp_path):
     assert config["tests"][0]["metadata"]["ground_truth"] == "judge"
 
 
+def test_generate_config_raises_clear_error_for_fixture_missing_scenario_key(tmp_path):
+    skill_dir = _make_skill_dir(tmp_path, with_fixtures=False)
+    fixtures_dir = skill_dir / "eval" / "fixtures"
+    fixtures_dir.mkdir(parents=True)
+    malformed = [{"id": "broken-01", "expected": "follow"}]
+    (fixtures_dir / "held-out-scenarios.json").write_text(json.dumps(malformed))
+
+    with pytest.raises(ValueError, match="missing required key 'scenario'"):
+        generate_config(skill_dir, ["openai/gpt-4o-mini"])
+
+
 class _DictContext(dict):
     """Simulate promptfoo's context object via dict-style access."""
 
@@ -167,6 +178,22 @@ def test_fixture_check_fails_for_violates_scenario_missing_gate_reference():
     )
     result = get_assert("This response violates the rules.", context)
     assert result["pass"] is False
+
+
+def test_fixture_check_passes_for_realistic_paraphrase_without_numbered_prefix():
+    """A real model response describing the gate in its own words — not the
+    fixture's literal numbered label — must still pass. This is the exact
+    scenario the reviewer flagged as under-scoring correct responses."""
+    context = _DictContext(
+        vars={"expected": "violates", "violates_gate": "2. No-fabricated-scores gate"}
+    )
+    output = (
+        "This is non-compliant: the assistant fabricated a numeric score "
+        "with no supporting evidence, which is not allowed."
+    )
+    result = get_assert(output, context)
+    assert result["pass"] is True
+    assert result["score"] == 1.0
 
 
 def test_fixture_check_fails_for_violates_scenario_with_no_violation_flagged():

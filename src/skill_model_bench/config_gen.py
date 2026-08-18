@@ -60,6 +60,9 @@ def _build_prompt(skill_md: str) -> str:
 
 
 def _fixture_test_case(entry: Dict[str, Any]) -> Dict[str, Any]:
+    if "scenario" not in entry:
+        raise ValueError(f"fixture entry missing required key 'scenario': {entry!r}")
+
     scenario_vars = {
         "scenario": entry["scenario"],
         "expected": entry.get("expected"),
