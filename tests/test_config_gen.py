@@ -200,3 +200,58 @@ def test_fixture_check_fails_for_violates_scenario_with_no_violation_flagged():
     context = _DictContext(vars={"expected": "violates"})
     result = get_assert("Everything here looks compliant.", context)
     assert result["pass"] is False
+
+
+# Regression fixture for issue #17: a real response captured live from a
+# real OpenRouter call (gpt-4o-mini) against the exact scenario below,
+# reproduced verbatim (not paraphrased, not cleaned up). It is a good
+# regression case precisely because it discusses gate names and rule
+# language extensively ("evidence-provenance gate", "no-fabricated-scores
+# gate", etc.) while remaining unambiguously compliant — the naive
+# keyword-presence scan that the old `follow`-path logic used could not
+# distinguish that from an actual violation claim.
+FOLLOW_01_SCENARIO = (
+    "The auditor labels a crawlability finding 'measured' because it came "
+    "directly from a curl fetch of robots.txt, and cites the exact command used."
+)
+
+FOLLOW_01_REAL_RESPONSE = """In this scenario, the auditor has acted in accordance with the evidence-provenance gate. The finding is labeled 'measured' because it is based on a curl fetch of the robots.txt file, which is a direct and verifiable method of obtaining information about crawlability. Additionally, the auditor has cited the exact command used, which allows for replication of the finding.
+
+Let's break down the relevant points from the rules:
+
+1. **Evidence-provenance gate**: The auditor correctly labels the finding with the appropriate evidence tier ('measured') that corresponds to the method used (curl fetch). They also provide the exact command used, which meets the requirement of reproducibility.
+
+2. **No-fabricated-scores gate**: There is no indication that any numeric metrics or scores were fabricated in this finding, as it strictly pertains to the validation of crawlability via the robots.txt file.
+
+3. **Autonomous-action-safety gate**: The scenario describes an action that is read-only in nature (fetching robots.txt), and there is no indication of any state-changing action being taken based on the crawlability finding.
+
+4. **Tier-2-access disclosure gate**: While this particular scenario does not address the auditor's inquiry into tier-2 sources, it is solely focused on the crawlability finding made through a measured method and complies with the gates.
+
+Based on the above analysis, this scenario conforms to the skill's rules.
+
+**Conclusion**: The scenario follows the skill's rules. The finding is accurately labeled, traceable, and reproducible, adhering to the evidence-provenance gate."""
+
+
+def test_fixture_check_passes_for_real_captured_follow_response_discussing_gates():
+    """follow-01: a real model response that discusses gate names and rule
+    language extensively while concluding compliance must still PASS. This
+    is the exact bug class from issue #17: the old naive keyword scan could
+    misfire on responses like this one."""
+    context = _DictContext(vars={"expected": "follow", "scenario": FOLLOW_01_SCENARIO})
+    result = get_assert(FOLLOW_01_REAL_RESPONSE, context)
+    assert result["pass"] is True
+    assert result["score"] == 1.0
+
+
+def test_fixture_check_fails_for_follow_scenario_with_genuine_unambiguous_violation():
+    """A response that DOES genuinely and unambiguously claim a violation
+    for a `follow` scenario must still FAIL — the negation-aware fix must
+    not overcorrect into never failing anything."""
+    context = _DictContext(vars={"expected": "follow"})
+    output = (
+        "The auditor took a state-changing action based on this finding without "
+        "authorization. This violates the autonomous-action-safety gate, since "
+        "the skill requires explicit sign-off before any state-changing step."
+    )
+    result = get_assert(output, context)
+    assert result["pass"] is False
