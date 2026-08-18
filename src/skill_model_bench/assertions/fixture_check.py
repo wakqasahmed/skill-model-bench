@@ -129,12 +129,21 @@ _COMPLIANCE_CUES = (
     "could violate",
 )
 
+# The hand-enumerated cue list above cannot enumerate every English phrasing
+# of "no violation happened" (e.g. "no rules are violated", "violates no
+# rules", "no indication that ... violates ..."). This regex catches the
+# general "no" ... "violat*" construction, in either order, within a short
+# word window, as a compliance signal in addition to the literal cues above.
+_NO_VIOLATION_RE = re.compile(r"\bno\b.{0,30}\bviolat\w*|\bviolat\w*.{0,30}\bno\b")
+
 
 def _has_unnegated_violation_claim(text: str) -> bool:
     for sentence in _SENTENCE_SPLIT_RE.split(text):
         if not any(phrase in sentence for phrase in VIOLATION_PHRASES):
             continue
         if any(cue in sentence for cue in _COMPLIANCE_CUES):
+            continue
+        if _NO_VIOLATION_RE.search(sentence):
             continue
         return True
     return False

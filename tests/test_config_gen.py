@@ -255,3 +255,19 @@ def test_fixture_check_fails_for_follow_scenario_with_genuine_unambiguous_violat
     )
     result = get_assert(output, context)
     assert result["pass"] is False
+
+
+def test_fixture_check_handles_no_X_are_violated_construct():
+    """Regression for the specific construct that slipped past the first
+    fix (issue #17 reviewer follow-up): "no rules are violated" places the
+    negation word "no" before the "violat*" stem, separated by other words
+    ("rules are") — a form the original hand-enumerated cue list did not
+    cover. Must PASS for a `follow` scenario."""
+    context = _DictContext(vars={"expected": "follow"})
+    output = (
+        "**Conclusion**: The scenario follows the skill's rules. "
+        "✅ No rules are violated."
+    )
+    result = get_assert(output, context)
+    assert result["pass"] is True
+    assert result["score"] == 1.0
