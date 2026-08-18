@@ -136,6 +136,17 @@ def _promptfoo_command(config_path: Path, output_path: Path) -> Optional[List[st
     return None
 
 
+def _valid_results_file(results_path: Path) -> bool:
+    """True if ``results_path`` exists and parses as promptfoo's results shape."""
+    if not results_path.is_file():
+        return False
+    try:
+        raw = json.loads(results_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    return isinstance(raw, dict) and "results" in raw
+
+
 def run(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -164,11 +175,17 @@ def run(argv: Optional[List[str]] = None) -> int:
             )
             return 0
 
-        subprocess.run(command, check=True)
+        completed = subprocess.run(command, check=False)
 
-        if not results_path.is_file():
+        # promptfoo exits non-zero (documented exit code 100) whenever any
+        # test case fails or the pass rate is below threshold -- that's
+        # normal signal, not a crash, and this tool's whole job is to
+        # measure and report exactly that. Only a missing/unparseable
+        # results file indicates a genuine crash worth treating as fatal.
+        if not _valid_results_file(results_path):
             raise CliError(
-                f"promptfoo did not produce a results file at {results_path}."
+                f"promptfoo did not produce a valid results file at {results_path} "
+                f"(exit code {completed.returncode})."
             )
 
         report = build_report(results_path, quality_bar=args.quality_bar)
@@ -193,9 +210,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(2)
-    except subprocess.CalledProcessError as exc:
-        print(f"Error: promptfoo eval failed (exit code {exc.returncode}).", file=sys.stderr)
-        sys.exit(1)
     else:
         sys.exit(exit_code)
 
