@@ -72,6 +72,83 @@ def _get(context: Any, key: str, default: Any = None) -> Any:
     return getattr(context, key, default)
 
 
+# For an `expected: "follow"` scenario, the bare presence of a violation
+# phrase anywhere in the response is not evidence of anything: a correct
+# response commonly *names the gate it checked* and states that it was
+# satisfied ("does not violate the evidence-provenance gate", "no violation
+# of the no-fabricated-scores gate was found"), or quotes the rule text
+# itself while walking through why the scenario is compliant. A bare
+# substring scan over the whole response (the old `flagged_violation = any(
+# phrase in text ...)`) cannot tell "X violates the rule" apart from "X does
+# not violate the rule" and fails every response that so much as discusses
+# the rule it is complying with — which is how real models write compliant
+# answers.
+#
+# The fix scopes the scan to one sentence at a time and requires a clear,
+# *unnegated* violation claim within that sentence before treating it as a
+# violation signal. A violation phrase sitting in a sentence that also
+# carries a negation/compliance cue ("does not violate", "complies with",
+# "no indication that ... violated", "would violate" as a hypothetical) is
+# treated as a compliance statement, not a violation claim. Only a sentence
+# with a violation phrase and *no* accompanying negation/compliance cue is
+# scored as an actual violation claim. Gate names or rule text appearing on
+# their own (with no violation phrase at all, as in the real response used
+# in the regression test below) never trigger anything — this deliberately
+# avoids inventing a second "gate-name mention" heuristic, which is exactly
+# the kind of naive scan that would misfire on a compliant response that
+# discusses gates extensively while explaining why it passed.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+
+_COMPLIANCE_CUES = (
+    " not ",
+    "n't ",
+    "no violation",
+    "no indication",
+    "does not",
+    "did not",
+    "without violating",
+    "never violat",
+    "complies",
+    "compliant",
+    "complied",
+    "satisfies",
+    "satisfied",
+    "satisfying",
+    "in accordance",
+    "consistent with",
+    "conforms",
+    "conforming",
+    "follows the",
+    "adheres",
+    "adhering",
+    "adhered",
+    "meets the requirement",
+    "would violate",
+    "would be violated",
+    "would breach",
+    "could violate",
+)
+
+# The hand-enumerated cue list above cannot enumerate every English phrasing
+# of "no violation happened" (e.g. "no rules are violated", "violates no
+# rules", "no indication that ... violates ..."). This regex catches the
+# general "no" ... "violat*" construction, in either order, within a short
+# word window, as a compliance signal in addition to the literal cues above.
+_NO_VIOLATION_RE = re.compile(r"\bno\b.{0,30}\bviolat\w*|\bviolat\w*.{0,30}\bno\b")
+
+
+def _has_unnegated_violation_claim(text: str) -> bool:
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if not any(phrase in sentence for phrase in VIOLATION_PHRASES):
+            continue
+        if any(cue in sentence for cue in _COMPLIANCE_CUES):
+            continue
+        if _NO_VIOLATION_RE.search(sentence):
+            continue
+        return True
+    return False
+
+
 def get_assert(output: str, context: Any) -> Dict[str, Union[bool, float, str]]:
     vars_ = _get(context, "vars", {}) or {}
     expected = _get(vars_, "expected")
@@ -90,11 +167,13 @@ def get_assert(output: str, context: Any) -> Dict[str, Union[bool, float, str]]:
         else:
             reason = f"Response flags a violation but never references gate {violates_gate!r}."
     elif expected == "follow":
-        passed = not flagged_violation
+        unnegated_violation = _has_unnegated_violation_claim(text)
+        passed = not unnegated_violation
         reason = (
-            "Response does not flag a violation, consistent with expected='follow'."
+            "Response does not make an unnegated violation claim, consistent with "
+            "expected='follow'."
             if passed
-            else "Response flags a violation, but expected='follow'."
+            else "Response makes a clear, unnegated violation claim, but expected='follow'."
         )
     else:
         passed = False
