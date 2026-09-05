@@ -202,6 +202,26 @@ def test_fixture_check_fails_for_violates_scenario_with_no_violation_flagged():
     assert result["pass"] is False
 
 
+def test_fixture_check_fails_for_violates_scenario_with_negated_violation_claim():
+    context = _DictContext(
+        vars={"expected": "violates", "violates_gate": "2. Likeness and consent gate"}
+    )
+    output = (
+        "This scenario does not violate the likeness and consent gate. The producer "
+        "captured documented consent, so there is no violation of the consent gate here."
+    )
+    result = get_assert(output, context)
+    assert result["pass"] is False
+
+
+def test_fixture_check_passes_for_violates_scenario_with_affirmative_violation_claim():
+    context = _DictContext(
+        vars={"expected": "violates", "violates_gate": "2. Likeness and consent gate"}
+    )
+    result = get_assert("This scenario violates the likeness and consent gate.", context)
+    assert result["pass"] is True
+
+
 # Regression fixture for issue #17: a real response captured live from a
 # real OpenRouter call (gpt-4o-mini) against the exact scenario below,
 # reproduced verbatim (not paraphrased, not cleaned up). It is a good
