@@ -143,11 +143,22 @@ _INHERENT_VIOLATION_PHRASES = (
     "fails to comply",
     "does not follow",
 )
+_NEGATED_INHERENT_VIOLATION_RE = re.compile(r"(?:\bnot|\bnever|n't)\s+$")
+
+
+def _has_unnegated_inherent_violation(sentence: str) -> bool:
+    for phrase in _INHERENT_VIOLATION_PHRASES:
+        start = 0
+        while (index := sentence.find(phrase, start)) != -1:
+            if not _NEGATED_INHERENT_VIOLATION_RE.search(sentence[:index]):
+                return True
+            start = index + len(phrase)
+    return False
 
 
 def _has_unnegated_violation_claim(text: str) -> bool:
     for sentence in _SENTENCE_SPLIT_RE.split(text):
-        if any(phrase in sentence for phrase in _INHERENT_VIOLATION_PHRASES):
+        if _has_unnegated_inherent_violation(sentence):
             return True
         if not any(phrase in sentence for phrase in VIOLATION_PHRASES):
             continue

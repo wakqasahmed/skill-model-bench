@@ -214,6 +214,28 @@ def test_fixture_check_fails_for_violates_scenario_with_negated_violation_claim(
     assert result["pass"] is False
 
 
+def test_fixture_check_passes_for_follow_scenario_with_negated_non_compliance():
+    context = _DictContext(vars={"expected": "follow"})
+    output = (
+        "This scenario is not non-compliant with the likeness and consent gate; "
+        "documented consent is present."
+    )
+    result = get_assert(output, context)
+    assert result["pass"] is True
+
+
+def test_fixture_check_fails_for_violates_scenario_with_negated_non_compliance():
+    context = _DictContext(
+        vars={"expected": "violates", "violates_gate": "2. Likeness and consent gate"}
+    )
+    output = (
+        "This scenario is not non-compliant with the likeness and consent gate; "
+        "documented consent is present."
+    )
+    result = get_assert(output, context)
+    assert result["pass"] is False
+
+
 def test_fixture_check_passes_for_violates_scenario_with_affirmative_violation_claim():
     context = _DictContext(
         vars={"expected": "violates", "violates_gate": "2. Likeness and consent gate"}
