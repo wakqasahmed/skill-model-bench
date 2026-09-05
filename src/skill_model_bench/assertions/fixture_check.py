@@ -86,13 +86,12 @@ def _get(context: Any, key: str, default: Any = None) -> Any:
 #
 # The fix scopes the scan to one sentence at a time and requires a clear,
 # *unnegated* violation claim within that sentence before treating it as a
-# violation signal. A violation phrase sitting in a sentence that also
-# carries a negation/compliance cue ("does not violate", "complies with",
-# "no indication that ... violated", "would violate" as a hypothetical) is
-# treated as a compliance statement, not a violation claim. Only a sentence
-# with a violation phrase and *no* accompanying negation/compliance cue is
-# scored as an actual violation claim. Gate names or rule text appearing on
-# their own (with no violation phrase at all, as in the real response used
+# violation signal. Except for phrases whose negative wording itself signals
+# a violation, a phrase accompanied by a negation/compliance cue ("does not
+# violate", "complies with", "no indication that ... violated", "would
+# violate" as a hypothetical) is treated as a compliance statement. Gate
+# names or rule text appearing on their own (with no violation phrase at all,
+# as in the real response used
 # in the regression test below) never trigger anything — this deliberately
 # avoids inventing a second "gate-name mention" heuristic, which is exactly
 # the kind of naive scan that would misfire on a compliant response that
@@ -136,9 +135,31 @@ _COMPLIANCE_CUES = (
 # word window, as a compliance signal in addition to the literal cues above.
 _NO_VIOLATION_RE = re.compile(r"\bno\b.{0,30}\bviolat\w*|\bviolat\w*.{0,30}\bno\b")
 
+# These phrases express a violation through negative wording, so their own
+# "compliant" or "does not" tokens are not compliance cues.
+_INHERENT_VIOLATION_PHRASES = (
+    "non-compliant",
+    "not compliant",
+    "fails to comply",
+    "does not follow",
+)
+_NEGATED_INHERENT_VIOLATION_RE = re.compile(r"(?:\bnot|\bnever|n't)\s+$")
+
+
+def _has_unnegated_inherent_violation(sentence: str) -> bool:
+    for phrase in _INHERENT_VIOLATION_PHRASES:
+        start = 0
+        while (index := sentence.find(phrase, start)) != -1:
+            if not _NEGATED_INHERENT_VIOLATION_RE.search(sentence[:index]):
+                return True
+            start = index + len(phrase)
+    return False
+
 
 def _has_unnegated_violation_claim(text: str) -> bool:
     for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if _has_unnegated_inherent_violation(sentence):
+            return True
         if not any(phrase in sentence for phrase in VIOLATION_PHRASES):
             continue
         if any(cue in sentence for cue in _COMPLIANCE_CUES):
@@ -155,20 +176,19 @@ def get_assert(output: str, context: Any) -> Dict[str, Union[bool, float, str]]:
     violates_gate = _get(vars_, "violates_gate")
 
     text = (output or "").lower()
-    flagged_violation = any(phrase in text for phrase in VIOLATION_PHRASES)
+    violation_claim = _has_unnegated_violation_claim(text)
 
     if expected == "violates":
         gate_matched = _gate_matched(violates_gate, text)
-        passed = flagged_violation and gate_matched
+        passed = violation_claim and gate_matched
         if passed:
             reason = f"Response flags a violation and references gate {violates_gate!r}."
-        elif not flagged_violation:
+        elif not violation_claim:
             reason = "Response does not flag a violation, but expected='violates'."
         else:
             reason = f"Response flags a violation but never references gate {violates_gate!r}."
     elif expected == "follow":
-        unnegated_violation = _has_unnegated_violation_claim(text)
-        passed = not unnegated_violation
+        passed = not violation_claim
         reason = (
             "Response does not make an unnegated violation claim, consistent with "
             "expected='follow'."
