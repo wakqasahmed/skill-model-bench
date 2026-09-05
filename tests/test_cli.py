@@ -176,7 +176,7 @@ def test_neither_promptfoo_nor_npx_prints_manual_instructions_and_exits_zero(tmp
     assert "--output results.json" in captured.out
 
 
-def test_repeat_writes_repeated_deterministic_config_without_promptfoo(tmp_path):
+def test_repeat_writes_promptfoo_repeat_config_without_promptfoo(tmp_path):
     skill_dir = _make_skill_dir(tmp_path)
     _add_fixtures(skill_dir)
     config_path = tmp_path / "promptfoo-config.yaml"
@@ -198,8 +198,13 @@ def test_repeat_writes_repeated_deterministic_config_without_promptfoo(tmp_path)
     assert exc_info.value.code == 0
     config = yaml.safe_load(config_path.read_text())
     assert config["providers"][0]["config"]["temperature"] == 0.0
-    assert len(config["tests"]) == 6
+    assert len(config["tests"]) == 2
+    assert [test["options"] for test in config["tests"]] == [
+        {"repeat": 3},
+        {"repeat": 3},
+    ]
     assert config["defaultTest"]["metadata"]["repetitions"] == 3
+    assert config["defaultTest"]["metadata"]["total_tests"] == 6
 
 
 def test_repeat_rejects_non_positive_values(tmp_path, capsys):

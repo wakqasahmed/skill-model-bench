@@ -11,9 +11,10 @@ Config shape follows promptfoo's documented schema:
   (https://www.promptfoo.dev/docs/providers/openrouter/).
 - prompts: a single prompt built from the skill's SKILL.md content plus a
   ``{{scenario}}`` var substitution.
-- tests: one test case per repetition of each fixture scenario (or each
-  llm-rubric-graded pseudo-scenario if no fixtures exist), each carrying
-  ``metadata.ground_truth`` set to ``"fixture"`` or ``"judge"``
+- tests: one test case per fixture scenario (or one llm-rubric-graded
+  pseudo-scenario if no fixtures exist), using ``options.repeat`` for
+  independent samples and carrying ``metadata.ground_truth`` set to
+  ``"fixture"`` or ``"judge"``
   (https://www.promptfoo.dev/docs/configuration/test-cases/).
 - assert: a custom Python assertion (``type: python``, ``file://`` reference,
   https://www.promptfoo.dev/docs/configuration/expected-outputs/python/) when
@@ -156,22 +157,18 @@ def generate_config(
     }
 
     if fixtures:
-        tests = [
-            _fixture_test_case(entry)
-            for entry in fixtures
-            for _ in range(repetitions)
-        ]
+        tests = [_fixture_test_case(entry) for entry in fixtures]
     else:
-        tests = [
-            _judge_test_case(skill_dir.name, judge_provider)
-            for _ in range(repetitions)
-        ]
+        tests = [_judge_test_case(skill_dir.name, judge_provider)]
+
+    for test_case in tests:
+        test_case["options"] = {"repeat": repetitions}
 
     config["defaultTest"] = {
         "metadata": {
             "temperature": DEFAULT_TEMPERATURE,
             "repetitions": repetitions,
-            "total_tests": len(tests),
+            "total_tests": len(tests) * repetitions,
         }
     }
     config["tests"] = tests

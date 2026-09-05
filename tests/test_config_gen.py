@@ -102,19 +102,19 @@ def test_generate_config_yaml_round_trip_with_fixtures(tmp_path):
         assert test_case["metadata"]["ground_truth"] == "fixture"
 
 
-def test_generate_config_repeats_each_fixture_and_records_sample_size(tmp_path):
+def test_generate_config_uses_promptfoo_repeat_for_each_fixture(tmp_path):
     skill_dir = _make_skill_dir(tmp_path, with_fixtures=True)
 
     config = generate_config(skill_dir, ["openai/gpt-4o-mini"], repetitions=3)
 
-    assert len(config["tests"]) == 3 * len(FIXTURES)
+    assert len(config["tests"]) == len(FIXTURES)
     assert [test["metadata"]["scenario_id"] for test in config["tests"]] == [
         "follow-01",
-        "follow-01",
-        "follow-01",
         "violates-01",
-        "violates-01",
-        "violates-01",
+    ]
+    assert [test["options"] for test in config["tests"]] == [
+        {"repeat": 3},
+        {"repeat": 3},
     ]
     assert config["defaultTest"]["metadata"] == {
         "temperature": 0.0,
@@ -133,13 +133,19 @@ def test_generate_config_rejects_non_positive_repetitions(tmp_path):
 def test_generate_config_without_fixtures_falls_back_to_llm_rubric(tmp_path):
     skill_dir = _make_skill_dir(tmp_path, with_fixtures=False)
 
-    config = generate_config(skill_dir, ["openai/gpt-4o-mini"])
+    config = generate_config(
+        skill_dir,
+        ["openai/gpt-4o-mini"],
+        repetitions=3,
+    )
 
     tests = config["tests"]
     assert len(tests) == 1
     test_case = tests[0]
 
     assert test_case["metadata"]["ground_truth"] == "judge"
+    assert test_case["options"] == {"repeat": 3}
+    assert config["defaultTest"]["metadata"]["total_tests"] == 3
 
     asserts = test_case["assert"]
     assert len(asserts) == 1
