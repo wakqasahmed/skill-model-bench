@@ -6,12 +6,13 @@ only produces the config that ``promptfoo eval`` would later consume; running
 that eval is out of scope for this issue.
 
 Config shape follows promptfoo's documented schema:
-- providers: OpenRouter models as ``openrouter:<model-id>``
+- providers: OpenRouter models as ``openrouter:<model-id>`` objects with
+  temperature pinned to ``0.0``
   (https://www.promptfoo.dev/docs/providers/openrouter/).
 - prompts: a single prompt built from the skill's SKILL.md content plus a
   ``{{scenario}}`` var substitution.
-- tests: one test case per fixture scenario (or one llm-rubric-graded case
-  per pseudo-scenario if no fixtures exist), each carrying
+- tests: one test case per repetition of each fixture scenario (or each
+  llm-rubric-graded pseudo-scenario if no fixtures exist), each carrying
   ``metadata.ground_truth`` set to ``"fixture"`` or ``"judge"``
   (https://www.promptfoo.dev/docs/configuration/test-cases/).
 - assert: a custom Python assertion (``type: python``, ``file://`` reference,
@@ -27,6 +28,7 @@ from typing import Any, Dict, List, Optional, Union
 import yaml
 
 DEFAULT_JUDGE_PROVIDER = "openrouter:openai/gpt-4o-mini"
+DEFAULT_TEMPERATURE = 0.0
 
 _ASSERTIONS_DIR = Path(__file__).resolve().parent / "assertions"
 _FIXTURE_CHECK_PATH = _ASSERTIONS_DIR / "fixture_check.py"
@@ -122,6 +124,7 @@ def generate_config(
     skill_dir: Union[str, Path],
     models: List[str],
     judge_provider: Union[str, Dict[str, Any]] = DEFAULT_JUDGE_PROVIDER,
+    repetitions: int = 1,
 ) -> Dict[str, Any]:
     """Build a promptfoo config dict for the given skill and model list.
 
@@ -132,20 +135,46 @@ def generate_config(
         judge_provider: promptfoo provider id (or object) used to grade
             llm-rubric assertions when a skill has no fixtures. Defaults to
             a cheap/fast model rather than the most expensive available one.
+        repetitions: Number of times to run each scenario per model.
     """
+    if repetitions < 1:
+        raise ValueError("repetitions must be at least 1")
+
     skill_dir = Path(skill_dir)
     skill_md = _load_skill_md(skill_dir)
     fixtures = _load_fixtures(skill_dir)
 
     config: Dict[str, Any] = {
-        "providers": [f"openrouter:{model}" for model in models],
+        "providers": [
+            {
+                "id": f"openrouter:{model}",
+                "config": {"temperature": DEFAULT_TEMPERATURE},
+            }
+            for model in models
+        ],
         "prompts": [_build_prompt(skill_md)],
     }
 
     if fixtures:
-        config["tests"] = [_fixture_test_case(entry) for entry in fixtures]
+        tests = [
+            _fixture_test_case(entry)
+            for entry in fixtures
+            for _ in range(repetitions)
+        ]
     else:
-        config["tests"] = [_judge_test_case(skill_dir.name, judge_provider)]
+        tests = [
+            _judge_test_case(skill_dir.name, judge_provider)
+            for _ in range(repetitions)
+        ]
+
+    config["defaultTest"] = {
+        "metadata": {
+            "temperature": DEFAULT_TEMPERATURE,
+            "repetitions": repetitions,
+            "total_tests": len(tests),
+        }
+    }
+    config["tests"] = tests
 
     return config
 
@@ -155,9 +184,15 @@ def write_config(
     models: List[str],
     output_path: Union[str, Path],
     judge_provider: Union[str, Dict[str, Any]] = DEFAULT_JUDGE_PROVIDER,
+    repetitions: int = 1,
 ) -> Path:
     """Generate a config and write it to output_path as YAML. Returns the path."""
-    config = generate_config(skill_dir, models, judge_provider=judge_provider)
+    config = generate_config(
+        skill_dir,
+        models,
+        judge_provider=judge_provider,
+        repetitions=repetitions,
+    )
     output_path = Path(output_path)
     output_path.write_text(yaml.safe_dump(config, sort_keys=False))
     return output_path

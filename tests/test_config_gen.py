@@ -48,9 +48,20 @@ def test_generate_config_with_fixtures_uses_python_assertions(tmp_path):
     config = generate_config(skill_dir, models)
 
     assert config["providers"] == [
-        "openrouter:openai/gpt-4o-mini",
-        "openrouter:anthropic/claude-3.5-haiku",
+        {
+            "id": "openrouter:openai/gpt-4o-mini",
+            "config": {"temperature": 0.0},
+        },
+        {
+            "id": "openrouter:anthropic/claude-3.5-haiku",
+            "config": {"temperature": 0.0},
+        },
     ]
+    assert config["defaultTest"]["metadata"] == {
+        "temperature": 0.0,
+        "repetitions": 1,
+        "total_tests": len(FIXTURES),
+    }
     assert len(config["prompts"]) == 1
     assert "{{scenario}}" in config["prompts"][0]
     assert SKILL_MD.strip() in config["prompts"][0]
@@ -80,10 +91,43 @@ def test_generate_config_yaml_round_trip_with_fixtures(tmp_path):
     write_config(skill_dir, ["openai/gpt-4o-mini"], output_path)
 
     loaded = yaml.safe_load(output_path.read_text())
-    assert loaded["providers"] == ["openrouter:openai/gpt-4o-mini"]
+    assert loaded["providers"] == [
+        {
+            "id": "openrouter:openai/gpt-4o-mini",
+            "config": {"temperature": 0.0},
+        }
+    ]
     assert len(loaded["tests"]) == len(FIXTURES)
     for test_case in loaded["tests"]:
         assert test_case["metadata"]["ground_truth"] == "fixture"
+
+
+def test_generate_config_repeats_each_fixture_and_records_sample_size(tmp_path):
+    skill_dir = _make_skill_dir(tmp_path, with_fixtures=True)
+
+    config = generate_config(skill_dir, ["openai/gpt-4o-mini"], repetitions=3)
+
+    assert len(config["tests"]) == 3 * len(FIXTURES)
+    assert [test["metadata"]["scenario_id"] for test in config["tests"]] == [
+        "follow-01",
+        "follow-01",
+        "follow-01",
+        "violates-01",
+        "violates-01",
+        "violates-01",
+    ]
+    assert config["defaultTest"]["metadata"] == {
+        "temperature": 0.0,
+        "repetitions": 3,
+        "total_tests": 6,
+    }
+
+
+def test_generate_config_rejects_non_positive_repetitions(tmp_path):
+    skill_dir = _make_skill_dir(tmp_path, with_fixtures=True)
+
+    with pytest.raises(ValueError, match="repetitions must be at least 1"):
+        generate_config(skill_dir, ["openai/gpt-4o-mini"], repetitions=0)
 
 
 def test_generate_config_without_fixtures_falls_back_to_llm_rubric(tmp_path):
