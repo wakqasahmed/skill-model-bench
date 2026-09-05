@@ -29,6 +29,13 @@ class CliError(Exception):
     """A predictable, user-facing error -- caught in main() and reported cleanly."""
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="skill-model-bench",
@@ -67,6 +74,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_QUALITY_BAR,
         help=f"Minimum pass rate a model must clear to be recommendable (default: {DEFAULT_QUALITY_BAR}).",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=_positive_int,
+        default=1,
+        help="Number of times to run each scenario per model (default: 1).",
     )
     parser.add_argument(
         "--judge-provider",
@@ -162,7 +175,13 @@ def run(argv: Optional[List[str]] = None) -> int:
         # user to run manually, so it must still exist after we return.
         tmp_dir = Path(tempfile.mkdtemp(prefix="skill-model-bench-"))
         config_path = Path(args.config_path) if args.config_path else tmp_dir / "promptfoo-config.yaml"
-        write_config(skill_dir, models, config_path, judge_provider=args.judge_provider)
+        write_config(
+            skill_dir,
+            models,
+            config_path,
+            judge_provider=args.judge_provider,
+            repetitions=args.repeat,
+        )
 
         results_path = tmp_dir / "results.json"
         command = _promptfoo_command(config_path, results_path)

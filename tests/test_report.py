@@ -27,11 +27,11 @@ def _result(model, success, ground_truth, cost=0.001, latency_ms=100.0):
     }
 
 
-def _promptfoo_output(results):
+def _promptfoo_output(results, config=None):
     return {
         "evalId": "eval-test",
         "results": {"results": results},
-        "config": {},
+        "config": config or {},
     }
 
 
@@ -137,6 +137,31 @@ def test_markdown_output_discloses_fixture_judge_split_not_just_json():
     # The Markdown table itself is the disclosure surface -- not just the
     # underlying JSON-serializable dict.
     assert json.dumps(report) not in markdown
+
+
+def test_report_records_determinism_metadata_and_discloses_sample_size():
+    results = [
+        _result("openrouter:openai/gpt-4o-mini", True, "fixture")
+        for _ in range(6)
+    ]
+    config = {
+        "defaultTest": {
+            "metadata": {
+                "temperature": 0.0,
+                "repetitions": 3,
+                "total_tests": 6,
+            }
+        }
+    }
+
+    report = build_report(_promptfoo_output(results, config), quality_bar=0.5)
+
+    assert report["metadata"] == {
+        "temperature": 0.0,
+        "repetitions": 3,
+        "total_tests": 6,
+    }
+    assert "n = 2 scenarios × 3 repetitions per model" in render_markdown(report)
 
 
 def test_build_report_accepts_file_path(tmp_path):

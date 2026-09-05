@@ -100,6 +100,28 @@ def _ground_truth(result: Dict[str, Any]) -> Optional[str]:
     return metadata.get("ground_truth")
 
 
+def _report_metadata(
+    raw: Dict[str, Any], models: Dict[str, Any]
+) -> Dict[str, Any]:
+    config = raw.get("config") or {}
+    default_test = config.get("defaultTest") or {}
+    metadata = default_test.get("metadata") or {}
+
+    repetitions = metadata.get("repetitions", 1)
+    total_tests = metadata.get("total_tests")
+    if total_tests is None:
+        total_tests = max(
+            (stats["total_tests"] for stats in models.values()),
+            default=0,
+        )
+
+    return {
+        "temperature": metadata.get("temperature"),
+        "repetitions": repetitions,
+        "total_tests": total_tests,
+    }
+
+
 def build_report(
     source: Union[str, Path, Dict[str, Any]],
     quality_bar: float = DEFAULT_QUALITY_BAR,
@@ -194,6 +216,7 @@ def build_report(
 
     return {
         "quality_bar": quality_bar,
+        "metadata": _report_metadata(raw, models),
         "models": models,
         "recommendation": recommendation,
     }
@@ -255,6 +278,13 @@ def render_markdown(report: Dict[str, Any]) -> str:
     lines.append("# Model benchmark report")
     lines.append("")
     lines.append(f"Quality bar: **{report['quality_bar']:.0%}** pass rate")
+    lines.append("")
+    metadata = report["metadata"]
+    repetitions = metadata["repetitions"]
+    scenarios = metadata["total_tests"] // repetitions
+    lines.append(
+        f"n = {scenarios} scenarios × {repetitions} repetitions per model"
+    )
     lines.append("")
     lines.append(
         "| Model | Pass Rate | Ground Truth Evidence | Total Cost | Avg Latency (ms) |"

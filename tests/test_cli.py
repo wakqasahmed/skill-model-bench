@@ -8,6 +8,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from skill_model_bench.cli import main
 
@@ -20,6 +21,20 @@ def _make_skill_dir(tmp_path):
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(SKILL_MD)
     return skill_dir
+
+
+def _add_fixtures(skill_dir):
+    fixtures_dir = skill_dir / "eval" / "fixtures"
+    fixtures_dir.mkdir(parents=True)
+    fixtures = [
+        {"id": "follow-01", "scenario": "Follow the rules.", "expected": "follow"},
+        {
+            "id": "violates-01",
+            "scenario": "Break the rules.",
+            "expected": "violates",
+        },
+    ]
+    (fixtures_dir / "held-out-scenarios.json").write_text(json.dumps(fixtures))
 
 
 def _fake_promptfoo_results():
@@ -161,6 +176,47 @@ def test_neither_promptfoo_nor_npx_prints_manual_instructions_and_exits_zero(tmp
     assert "--output results.json" in captured.out
 
 
+def test_repeat_writes_promptfoo_repeat_config_without_promptfoo(tmp_path):
+    skill_dir = _make_skill_dir(tmp_path)
+    _add_fixtures(skill_dir)
+    config_path = tmp_path / "promptfoo-config.yaml"
+
+    with patch("skill_model_bench.cli.shutil.which", return_value=None):
+        with pytest.raises(SystemExit) as exc_info:
+            main(
+                [
+                    str(skill_dir),
+                    "--model",
+                    "openai/gpt-4o-mini",
+                    "--repeat",
+                    "3",
+                    "--config-path",
+                    str(config_path),
+                ]
+            )
+
+    assert exc_info.value.code == 0
+    config = yaml.safe_load(config_path.read_text())
+    assert config["providers"][0]["config"]["temperature"] == 0.0
+    assert len(config["tests"]) == 2
+    assert [test["options"] for test in config["tests"]] == [
+        {"repeat": 3},
+        {"repeat": 3},
+    ]
+    assert config["defaultTest"]["metadata"]["repetitions"] == 3
+    assert config["defaultTest"]["metadata"]["total_tests"] == 6
+
+
+def test_repeat_rejects_non_positive_values(tmp_path, capsys):
+    skill_dir = _make_skill_dir(tmp_path)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main([str(skill_dir), "--model", "openai/gpt-4o-mini", "--repeat", "0"])
+
+    assert exc_info.value.code != 0
+    assert "must be at least 1" in capsys.readouterr().err
+
+
 def test_results_flag_skips_running_promptfoo_entirely(tmp_path, capsys):
     results_path = tmp_path / "results.json"
     results_path.write_text(json.dumps(_fake_promptfoo_results()))
@@ -222,3 +278,4 @@ def test_help_prints_usage_and_exits_zero(capsys):
     captured = capsys.readouterr()
     assert "skill-model-bench" in captured.out
     assert "--model" in captured.out
+    assert "--repeat" in captured.out
